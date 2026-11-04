@@ -4,8 +4,8 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -26,10 +26,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 
-private val Navy = Color(0xFF0A111B)
-private val Panel = Color(0xFF142233)
-private val Accent = Color(0xFF55C4D7)
-private val Muted = Color(0xFF9AAABD)
+internal val Navy = Color(0xFF0A111B)
+internal val Panel = Color(0xFF142233)
+internal val Accent = Color(0xFF55C4D7)
+internal val Muted = Color(0xFF9AAABD)
+
+private val PICK_TYPES = arrayOf("application/vnd.android.package-archive", "application/zip", "*/*")
 
 class MainActivity : ComponentActivity() {
     private lateinit var library: ApkLibrary
@@ -57,19 +59,21 @@ private fun OverforApkApp(library: ApkLibrary, incomingIntent: Intent?) {
     var renameTarget by remember { mutableStateOf<ApkEntry?>(null) }
     var renameText by remember { mutableStateOf("") }
     var keepOlder by remember { mutableStateOf(library.keepOlderVersions()) }
+    var sendEntryId by remember { mutableStateOf<String?>(null) }
+
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) {
             scope.launch {
                 runCatching {
                     context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
-                val result = runCatching {
-                    library.import(uri, uri.lastPathSegment?.substringAfterLast('/') )
-                }
-                result.onSuccess {
-                    entries = library.all()
-                    message = "${it.displayName} har lagts till i biblioteket."
-                }.onFailure { message = it.message ?: "Kunde inte importera filen." }
+                runCatching { library.import(uri, uri.lastPathSegment?.substringAfterLast('/')) }
+                    .onSuccess {
+                        entries = library.all()
+                        sendEntryId = it.id
+                        message = "${it.displayName} har lagts till."
+                    }
+                    .onFailure { message = it.message ?: "Kunde inte importera filen." }
             }
         }
     }
@@ -81,7 +85,10 @@ private fun OverforApkApp(library: ApkLibrary, incomingIntent: Intent?) {
             else @Suppress("DEPRECATION") (incomingIntent.getParcelableExtra(Intent.EXTRA_STREAM) as? Uri)
             if (uri != null) {
                 runCatching { library.import(uri, "delad-app.apk") }
-                    .onSuccess { entries = library.all(); page = "library"; message = "Appen har importerats." }
+                    .onSuccess {
+                        entries = library.all(); sendEntryId = it.id; page = "send"
+                        message = "Appen är importerad. Välj TV nedan och installera."
+                    }
                     .onFailure { message = it.message ?: "Importen misslyckades." }
             }
         }
@@ -92,19 +99,28 @@ private fun OverforApkApp(library: ApkLibrary, incomingIntent: Intent?) {
     )) {
         Scaffold(containerColor = Navy, snackbarHost = { SnackbarHost(remember { SnackbarHostState() }) }) { padding ->
             Column(Modifier.fillMaxSize().background(Navy).padding(padding).padding(horizontal = 20.dp)) {
-                Row(Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 24.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 18.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.SwapHoriz, null, tint = Accent, modifier = Modifier.size(34.dp))
                     Spacer(Modifier.width(10.dp))
                     Column {
                         Text("ÖverförAPK", fontSize = 25.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                        Text("Ditt appbibliotek. Dina enheter.", fontSize = 12.sp, color = Muted)
+                        Text("Flytta appar från mobilen till TV:n", fontSize = 12.sp, color = Muted)
                     }
                 }
                 when (page) {
+                    "send" -> SendPage(
+                        library = library,
+                        entries = entries,
+                        selectedId = sendEntryId,
+                        onSelect = { sendEntryId = it },
+                        onPickFile = { picker.launch(PICK_TYPES) },
+                        onHelp = { page = "help" },
+                        onMessage = { message = it }
+                    )
                     "library" -> {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("Mina appar", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.weight(1f))
-                            TextButton(onClick = { picker.launch(arrayOf("application/vnd.android.package-archive", "application/zip", "*/*")) }) {
+                            TextButton(onClick = { picker.launch(PICK_TYPES) }) {
                                 Icon(Icons.Default.Add, null); Text(" Lägg till")
                             }
                         }
@@ -118,7 +134,7 @@ private fun OverforApkApp(library: ApkLibrary, incomingIntent: Intent?) {
                         Text("Lagring: ${formatBytes(entries.sumOf { it.file.length() })}", color = Muted, fontSize = 12.sp)
                         Spacer(Modifier.height(10.dp))
                         if (entries.isEmpty()) EmptyState("Ditt bibliotek är tomt", "Lägg till en APK, APKS eller XAPK från mobilen.")
-                        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        LazyColumn(Modifier.weight(1f, fill = false), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             items(entries, key = { it.id }) { entry ->
                                 Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(18.dp)) {
                                     Column(Modifier.fillMaxWidth().padding(15.dp)) {
@@ -126,34 +142,55 @@ private fun OverforApkApp(library: ApkLibrary, incomingIntent: Intent?) {
                                         Text("${entry.versionName ?: "Okänd version"}  •  ${formatBytes(entry.file.length())}", color = Muted, fontSize = 12.sp)
                                         Text(entry.packageName ?: "Paketinformation saknas", color = Muted, fontSize = 11.sp)
                                         Spacer(Modifier.height(8.dp))
+                                        Button(
+                                            onClick = { sendEntryId = entry.id; page = "send" },
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) { Icon(Icons.Default.Tv, null); Text("  Skicka till TV") }
                                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            OutlinedButton(onClick = { renameTarget = entry; renameText = entry.displayName }) { Text("Byt namn") }
-                                            OutlinedButton(onClick = {
+                                            TextButton(onClick = { renameTarget = entry; renameText = entry.displayName }) { Text("Byt namn") }
+                                            TextButton(onClick = {
                                                 library.delete(entry); entries = library.all()
+                                                if (sendEntryId == entry.id) sendEntryId = null
                                             }) { Text("Ta bort") }
-                                            Button(onClick = { message = "TV-installation är nästa utvecklingssteg och är ännu inte aktiverad." }) { Text("Installera") }
                                         }
                                     }
                                 }
                             }
                         }
                     }
-                    "github" -> {
-                        PageTitle("Från GitHub", "Hämta APK-filer från dina egna repositories.")
-                        EmptyState("GitHub-koppling kommer", "Nästa steg är att visa repositories, releases och APK-filer samt spara dem offline.")
-                    }
-                    "devices" -> {
-                        PageTitle("Mina TV-apparater", "Samla dina Android TV-enheter på ett ställe.")
-                        EmptyState("Ingen TV tillagd ännu", "Enhetsupptäckt och ADB-anslutning byggs i nästa steg.")
-                    }
+                    "github" -> GithubPage(
+                        library = library,
+                        onImported = {
+                            entries = library.all()
+                            sendEntryId = it.id
+                            message = "${it.displayName} har lagts till i biblioteket. Skicka den till TV:n via startsidan."
+                        },
+                        onMessage = { message = it }
+                    )
+                    "help" -> HelpPage()
                     else -> {
-                        Text("Välj vad du vill göra", color = Muted, fontSize = 14.sp)
+                        Text("Vad vill du göra?", color = Muted, fontSize = 14.sp)
                         Spacer(Modifier.height(14.dp))
+                        Card(
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp).clickable { page = "send" },
+                            colors = CardDefaults.cardColors(containerColor = Accent),
+                            shape = RoundedCornerShape(20.dp)
+                        ) {
+                            Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Tv, null, tint = Navy, modifier = Modifier.size(34.dp))
+                                Spacer(Modifier.width(15.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text("Skicka app till TV", color = Navy, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                                    Text("Välj APK, välj TV, installera. Tre steg.", color = Navy, fontSize = 12.sp)
+                                }
+                                Icon(Icons.Default.ChevronRight, null, tint = Navy)
+                            }
+                        }
                         HomeCard(Icons.Default.Apps, "Mina appar", "Samla och hantera APK-filer", "${entries.size} appar") { page = "library" }
                         HomeCard(Icons.Default.CloudDownload, "Från GitHub", "Hämta senaste versioner och releases") { page = "github" }
-                        HomeCard(Icons.Default.Tv, "Mina TV-apparater", "Installera appar via ditt Wi-Fi") { page = "devices" }
-                        Spacer(Modifier.height(20.dp))
-                        Text("Biblioteket sparas lokalt på mobilen och kan användas offline.", color = Muted, fontSize = 12.sp)
+                        HomeCard(Icons.Default.Info, "Förbered TV:n", "Steg-för-steg-guide, görs en gång") { page = "help" }
+                        Spacer(Modifier.height(12.dp))
+                        Text("Tips: dela en APK-fil från valfri app till ÖverförAPK så hamnar du direkt i guiden.", color = Muted, fontSize = 12.sp)
                     }
                 }
                 Spacer(Modifier.weight(1f))
@@ -207,13 +244,13 @@ private fun HomeCard(icon: androidx.compose.ui.graphics.vector.ImageVector, titl
 }
 
 @Composable
-private fun PageTitle(title: String, subtitle: String) {
+internal fun PageTitle(title: String, subtitle: String) {
     Text(title, color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
     Text(subtitle, color = Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp, bottom = 18.dp))
 }
 
 @Composable
-private fun EmptyState(title: String, subtitle: String) {
+internal fun EmptyState(title: String, subtitle: String) {
     Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(18.dp)) {
         Column(Modifier.fillMaxWidth().padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(Icons.Default.Inventory2, null, tint = Accent, modifier = Modifier.size(34.dp))
@@ -224,7 +261,7 @@ private fun EmptyState(title: String, subtitle: String) {
     }
 }
 
-private fun formatBytes(bytes: Long): String = when {
+internal fun formatBytes(bytes: Long): String = when {
     bytes >= 1024L * 1024L -> "${"%.1f".format(bytes / (1024.0 * 1024.0))} MB"
     bytes >= 1024L -> "${"%.0f".format(bytes / 1024.0)} KB"
     else -> "$bytes B"

@@ -6,6 +6,7 @@ import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.Build
 import java.io.File
+import java.io.InputStream
 import java.util.zip.ZipInputStream
 
 data class ApkEntry(
@@ -25,13 +26,16 @@ class ApkLibrary(private val context: Context) {
     private val extractedFolder = File(context.cacheDir, "apk-parts").apply { mkdirs() }
     private val prefs = context.getSharedPreferences("apk-library", Context.MODE_PRIVATE)
 
-    fun import(uri: Uri, suggestedName: String?): ApkEntry {
+    fun import(uri: Uri, suggestedName: String?): ApkEntry =
+        importStream(suggestedName) { context.contentResolver.openInputStream(uri) }
+
+    fun importStream(suggestedName: String?, open: () -> InputStream?): ApkEntry {
         val safeName = (suggestedName ?: "app-${System.currentTimeMillis()}.apk")
             .substringAfterLast('/')
             .replace(Regex("[^A-Za-z0-9._-]"), "_")
         val destination = File(folder, "${System.currentTimeMillis()}-$safeName")
         try {
-            context.contentResolver.openInputStream(uri).use { input ->
+            open().use { input ->
                 requireNotNull(input) { "Filen kunde inte öppnas." }.use { source ->
                     destination.outputStream().use { output -> source.copyTo(output) }
                 }
@@ -63,6 +67,23 @@ class ApkLibrary(private val context: Context) {
     fun delete(entry: ApkEntry) {
         entry.file.delete()
         prefs.edit().remove(entry.file.name).apply()
+    }
+
+    fun githubUser(): String = prefs.getString("gh_user", "") ?: ""
+    fun githubToken(): String = prefs.getString("gh_token", "") ?: ""
+    fun setGithub(user: String, token: String) {
+        prefs.edit().putString("gh_user", user.trim()).putString("gh_token", token.trim()).apply()
+    }
+
+    fun tvDevicesJson(): String = prefs.getString("tv_devices", "[]") ?: "[]"
+    fun setTvDevicesJson(json: String) { prefs.edit().putString("tv_devices", json).apply() }
+
+    fun lastTvKey(): String = prefs.getString("tv_last", "") ?: ""
+    fun setLastTvKey(key: String) { prefs.edit().putString("tv_last", key).apply() }
+
+    fun adbKeyFiles(): Pair<File, File> {
+        val dir = File(context.filesDir, "adb").apply { mkdirs() }
+        return File(dir, "adbkey") to File(dir, "adbkey.pub")
     }
 
     fun keepOlderVersions(): Boolean = prefs.getBoolean("keep_older_versions", false)
