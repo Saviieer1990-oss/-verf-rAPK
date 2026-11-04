@@ -111,6 +111,7 @@ internal fun ColumnScope.SendPage(
                 else -> {
                     val o = r.getOrThrow()
                     outcome = o
+                    onMessage(o.text)
                     val model = o.model
                     if (o.ok && !model.isNullOrBlank() && d.name.startsWith("TV ")) {
                         saveDevices(devices.map { if (it.key == d.key) it.copy(name = model) else it })
@@ -122,7 +123,7 @@ internal fun ColumnScope.SendPage(
 
     LaunchedEffect(Unit) { if (devices.isEmpty()) runScan() }
 
-    LazyColumn(Modifier.weight(1f, fill = false), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item { Text("Skicka app till TV", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold) }
 
         // Steg 1
@@ -208,41 +209,37 @@ internal fun ColumnScope.SendPage(
             }
         }
 
-        // Steg 3
-        item { StepHeader(3, "Installera") }
-        item {
-            Button(
-                onClick = { install() },
-                enabled = entry != null && device != null && busy == null,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)
-            ) {
-                Text(
-                    if (entry != null && device != null) "Installera ${entry.displayName} på ${device.name}"
-                    else "Välj app och TV först"
-                )
-            }
-        }
-        busy?.let { b ->
-            item {
-                Text(b, color = Accent, fontSize = 12.sp)
-                LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 6.dp))
-            }
-        }
+        item { Spacer(Modifier.height(8.dp)) }
+    }
+
+    // Steg 3: fast längst ner så att knappen och resultatet alltid syns
+    Column(Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         outcome?.let { o ->
-            item {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = if (o.ok) Color(0xFF123A2A) else Color(0xFF3A1A1A)),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Column(Modifier.fillMaxWidth().padding(16.dp)) {
-                        Text(if (o.ok) "Klart!" else "Det gick inte", color = Color.White, fontWeight = FontWeight.Bold)
-                        Text(o.text, color = Color.White, fontSize = 13.sp)
-                        if (!o.ok) TextButton(onClick = onHelp) { Text("Visa guide för TV:n") }
-                    }
+            Card(
+                colors = CardDefaults.cardColors(containerColor = if (o.ok) Color(0xFF123A2A) else Color(0xFF3A1A1A)),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                    Text(if (o.ok) "Klart!" else "Det gick inte", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(o.text, color = Color.White, fontSize = 13.sp)
+                    if (!o.ok) TextButton(onClick = onHelp) { Text("Visa guide för TV:n") }
                 }
             }
         }
-        item { Spacer(Modifier.height(8.dp)) }
+        busy?.let { b ->
+            Text(b, color = Accent, fontSize = 12.sp)
+            LinearProgressIndicator(Modifier.fillMaxWidth())
+        }
+        Button(
+            onClick = { install() },
+            enabled = entry != null && device != null && busy == null,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)
+        ) {
+            Text(
+                if (entry != null && device != null) "Installera ${entry.displayName} på ${device.name}"
+                else "Välj app och TV först"
+            )
+        }
     }
 
     if (manual) {

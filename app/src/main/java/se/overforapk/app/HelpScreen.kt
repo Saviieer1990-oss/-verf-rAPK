@@ -39,7 +39,7 @@ private fun GuideStep(number: String, title: String, body: String) {
 @Composable
 internal fun ColumnScope.HelpPage() {
     Column(
-        Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
+        Modifier.weight(1f).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         PageTitle("Förbered TV:n", "Görs en gång. Menyernas namn kan skilja sig åt mellan tillverkare.")

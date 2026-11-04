@@ -122,7 +122,7 @@ internal fun ColumnScope.GithubPage(
         if (rels != null && rels.isEmpty() && !loading) {
             EmptyState("Inga APK-filer", "Det finns inga releases med .apk, .apks eller .xapk i det här repot.")
         }
-        LazyColumn(Modifier.weight(1f, fill = false), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             rels?.forEach { rel ->
                 items(rel.assets, key = { it.id }) { asset ->
                     Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(18.dp)) {
@@ -149,7 +149,7 @@ internal fun ColumnScope.GithubPage(
     } else {
         val list = repos
         if (list != null && list.isEmpty() && !loading) EmptyState("Inga repositories", "Hittade inga repositories för kontot.")
-        LazyColumn(Modifier.weight(1f, fill = false), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             items(list ?: emptyList(), key = { it.fullName }) { r ->
                 Card(
                     modifier = Modifier.fillMaxWidth().clickable { openRepo(r) },

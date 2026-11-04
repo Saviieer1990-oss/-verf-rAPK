@@ -46,7 +46,8 @@ object TvDevices {
 
 /** Installerar APK-filer på en Android TV via ADB över nätverket (utan adb-program). */
 class TvInstaller(private val library: ApkLibrary, private val context: Context) {
-    private val wireless = WirelessInstaller(library, context)
+    // Skapas först vid behov: nyckelgenereringen är tung och behövs inte för port 5555
+    private val wireless by lazy { WirelessInstaller(library, context) }
 
     private fun keyPair(): AdbKeyPair {
         val (priv, pub) = library.adbKeyFiles()
@@ -55,14 +56,26 @@ class TvInstaller(private val library: ApkLibrary, private val context: Context)
     }
 
     /** Returnerar null vid lyckad parkoppling, annars ett felmeddelande. */
-    fun pair(host: String, pairingPort: Int, code: String): String? = wireless.pair(host, pairingPort, code)
+    fun pair(host: String, pairingPort: Int, code: String): String? = try {
+        wireless.pair(host, pairingPort, code)
+    } catch (e: Throwable) {
+        "Trådlös felsökning kunde inte startas (${e.message ?: e.javaClass.simpleName})."
+    }
 
     /**
      * Installerar [entry] på [device]. Kastar [NeedsPairingException] om TV:n måste parkopplas först.
      * Övriga fel returneras som [Outcome] med ok = false.
      */
     fun install(device: TvDevice, entry: ApkEntry): Outcome {
-        if (device.wireless) return wireless.install(device, entry)
+        if (device.wireless) {
+            return try {
+                wireless.install(device, entry)
+            } catch (e: NeedsPairingException) {
+                throw e
+            } catch (e: Exception) {
+                Outcome(false, "Installationen misslyckades: ${e.message ?: e.javaClass.simpleName}")
+            }
+        }
         try {
             Dadb.create(device.host, device.port, keyPair(), connectTimeout = 8_000, socketTimeout = 0).use { adb ->
                 val parts = library.apkParts(entry)
@@ -81,6 +94,8 @@ class TvInstaller(private val library: ApkLibrary, private val context: Context)
             return Outcome(false, "Kunde inte ansluta till ${device.host}. Kontrollera att TV:n är på, att ni är på samma Wi-Fi och att felsökning är påslagen.")
         } catch (e: AdbException) {
             return Outcome(false, "ADB-fel: ${e.message ?: "okänt fel"}")
+        } catch (e: java.io.IOException) {
+            return Outcome(false, "Nätverksfel: ${e.message ?: "anslutningen bröts"}")
         }
     }
 }

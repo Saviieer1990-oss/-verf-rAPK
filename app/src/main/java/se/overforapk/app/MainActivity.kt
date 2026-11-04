@@ -78,6 +78,10 @@ private fun OverforApkApp(library: ApkLibrary, incomingIntent: Intent?) {
         }
     }
 
+    LaunchedEffect(message) {
+        if (message != null) { kotlinx.coroutines.delay(6_000); message = null }
+    }
+
     LaunchedEffect(incomingIntent) {
         if (incomingIntent?.action == Intent.ACTION_SEND) {
             val uri = if (android.os.Build.VERSION.SDK_INT >= 33)
@@ -134,7 +138,7 @@ private fun OverforApkApp(library: ApkLibrary, incomingIntent: Intent?) {
                         Text("Lagring: ${formatBytes(entries.sumOf { it.file.length() })}", color = Muted, fontSize = 12.sp)
                         Spacer(Modifier.height(10.dp))
                         if (entries.isEmpty()) EmptyState("Ditt bibliotek är tomt", "Lägg till en APK, APKS eller XAPK från mobilen.")
-                        LazyColumn(Modifier.weight(1f, fill = false), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             items(entries, key = { it.id }) { entry ->
                                 Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(18.dp)) {
                                     Column(Modifier.fillMaxWidth().padding(15.dp)) {
@@ -193,7 +197,7 @@ private fun OverforApkApp(library: ApkLibrary, incomingIntent: Intent?) {
                         Text("Tips: dela en APK-fil från valfri app till ÖverförAPK så hamnar du direkt i guiden.", color = Muted, fontSize = 12.sp)
                     }
                 }
-                Spacer(Modifier.weight(1f))
+                if (page == "home") Spacer(Modifier.weight(1f))
                 if (page != "home") {
                     TextButton(onClick = { page = "home" }, modifier = Modifier.align(Alignment.Start)) {
                         Icon(Icons.Default.ArrowBack, null); Text(" Till startsidan")
