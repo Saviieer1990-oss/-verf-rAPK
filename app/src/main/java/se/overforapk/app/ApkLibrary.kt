@@ -2,9 +2,11 @@ package se.overforapk.app
 
 import android.content.Context
 import android.content.pm.PackageManager
+import android.database.Cursor
 import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.Build
+import android.provider.OpenableColumns
 import java.io.File
 import java.io.InputStream
 import java.util.zip.ZipInputStream
@@ -25,14 +27,26 @@ class ApkLibrary(private val context: Context) {
     private val folder = File(context.filesDir, "apk-library").apply { mkdirs() }
     private val extractedFolder = File(context.cacheDir, "apk-parts").apply { mkdirs() }
     private val prefs = context.getSharedPreferences("apk-library", Context.MODE_PRIVATE)
+    private val secrets by lazy { SecureSecretStore(context, "github-secrets") }
 
-    fun import(uri: Uri, suggestedName: String?): ApkEntry =
-        importStream(suggestedName) { context.contentResolver.openInputStream(uri) }
+    fun import(uri: Uri, suggestedName: String?): ApkEntry {
+        val name = suggestedName?.takeIf { it.isNotBlank() } ?: queryDisplayName(uri)
+        return importStream(name) { context.contentResolver.openInputStream(uri) }
+    }
+
+    private fun queryDisplayName(uri: Uri): String? = runCatching {
+        context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) cursor.getString(cursor.getColumnIndexOrThrow(OpenableColumns.DISPLAY_NAME)) else null
+        }
+    }.getOrNull()
 
     fun importStream(suggestedName: String?, open: () -> InputStream?): ApkEntry {
         val safeName = (suggestedName ?: "app-${System.currentTimeMillis()}.apk")
             .substringAfterLast('/')
             .replace(Regex("[^A-Za-z0-9._-]"), "_")
+        require(safeName.substringAfterLast('.', "").lowercase() in setOf("apk", "apks", "xapk")) {
+            "Välj en APK-, APKS- eller XAPK-fil."
+        }
         val destination = File(folder, "${System.currentTimeMillis()}-$safeName")
         try {
             open().use { input ->
@@ -42,6 +56,7 @@ class ApkLibrary(private val context: Context) {
             }
             require(destination.length() > 0L) { "Filen är tom." }
             val added = inspect(destination)
+            require(added.packageName != null || added.isSplitArchive) { "Filen verkar inte innehålla en giltig Android-app." }
             if (added.packageName != null && !keepOlderVersions()) {
                 all().filter {
                     it.file != destination && it.packageName == added.packageName
@@ -70,9 +85,26 @@ class ApkLibrary(private val context: Context) {
     }
 
     fun githubUser(): String = prefs.getString("gh_user", "") ?: ""
-    fun githubToken(): String = prefs.getString("gh_token", "") ?: ""
+
+    @Synchronized
+    fun githubToken(): String {
+        val encrypted = secrets.get("token")
+        if (encrypted.isNotEmpty()) return encrypted
+        // Migrate tokens saved by earlier test builds out of plain-text preferences.
+        val legacy = prefs.getString("gh_token", "").orEmpty()
+        if (legacy.isNotEmpty()) {
+            runCatching {
+                secrets.put("token", legacy)
+                prefs.edit().remove("gh_token").apply()
+            }
+        }
+        return legacy
+    }
+
+    @Synchronized
     fun setGithub(user: String, token: String) {
-        prefs.edit().putString("gh_user", user.trim()).putString("gh_token", token.trim()).apply()
+        if (token.isNotBlank()) secrets.put("token", token.trim()) else secrets.put("token", "")
+        prefs.edit().putString("gh_user", user.trim()).remove("gh_token").apply()
     }
 
     fun tvDevicesJson(): String = prefs.getString("tv_devices", "[]") ?: "[]"
