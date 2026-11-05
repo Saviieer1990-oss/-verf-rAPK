@@ -73,6 +73,9 @@ internal fun ColumnScope.SendPage(
     var scanned by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf<String?>(null) }
     var outcome by remember { mutableStateOf<Outcome?>(null) }
+    var tvVersion by remember { mutableStateOf<Long?>(null) }
+    var checkingTvVersion by remember { mutableStateOf(false) }
+    var tvCheckFailed by remember { mutableStateOf(false) }
     var pairingFor by remember { mutableStateOf<TvDevice?>(null) }
     var manual by remember { mutableStateOf(false) }
     var manualName by remember { mutableStateOf("") }
@@ -81,6 +84,24 @@ internal fun ColumnScope.SendPage(
     val entry = entries.firstOrNull { it.id == selectedId }
     val device = devices.firstOrNull { it.key == selectedKey }
     val fresh = found.filter { f -> devices.none { it.host == f.host && it.wireless == f.wireless } }
+
+    LaunchedEffect(device?.key, entry?.packageName) {
+        tvVersion = null
+        tvCheckFailed = false
+        val currentDevice = device
+        val packageName = entry?.packageName
+        if (currentDevice != null && packageName != null) {
+            checkingTvVersion = true
+            val checked = withContext(Dispatchers.IO) {
+                runCatching { installer.installedVersion(currentDevice, packageName) }
+            }
+            tvVersion = checked.getOrNull()
+            tvCheckFailed = checked.isFailure || checked.getOrNull() == null
+            checkingTvVersion = false
+        } else {
+            checkingTvVersion = false
+        }
+    }
 
     fun saveDevices(list: List<TvDevice>) { devices = list; library.setTvDevicesJson(TvDevices.toJson(list)) }
     fun choose(d: TvDevice) { selectedKey = d.key; library.setLastTvKey(d.key); outcome = null }
@@ -111,6 +132,7 @@ internal fun ColumnScope.SendPage(
                 else -> {
                     val o = r.getOrThrow()
                     outcome = o
+                    if (o.ok) tvVersion = e.versionCode
                     onMessage(o.text)
                     val model = o.model
                     if (o.ok && !model.isNullOrBlank() && d.name.startsWith("TV ")) {
@@ -144,6 +166,26 @@ internal fun ColumnScope.SendPage(
         }
 
         // Steg 2
+        if (entry != null && device != null) {
+            item {
+                Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(14.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(13.dp)) {
+                        Text("Appstatus på ${device.name}", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                        val status = when {
+                            checkingTvVersion -> "Kontrollerar installerad version…"
+                            tvCheckFailed -> "Kunde inte läsa status – kontrollera anslutningen"
+                            tvVersion == null -> "Status ej kontrollerad"
+                            tvVersion == 0L -> "Inte installerad på TV:n"
+                            tvVersion!! < entry.versionCode -> "Nyare version finns i mobilen"
+                            tvVersion!! > entry.versionCode -> "Nyare version finns redan på TV:n"
+                            else -> "Samma version finns på TV:n"
+                        }
+                        Text(status, color = if (tvVersion != null && tvVersion!! > 0L && tvVersion!! < entry.versionCode) Accent else Muted, fontSize = 12.sp)
+                    }
+                }
+            }
+        }
+
         item { StepHeader(2, "Välj TV") }
         items(devices, key = { "tv-${it.key}" }) { d ->
             ChoiceCard(
