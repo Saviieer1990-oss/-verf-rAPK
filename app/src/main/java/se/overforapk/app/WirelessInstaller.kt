@@ -72,11 +72,17 @@ class WirelessInstaller(private val library: ApkLibrary, private val context: Co
         val parts = library.apkParts(entry)
         return try {
             withConnection(device) {
-                val outcome = if (parts.size == 1) {
+                // Kontrollera arkitekturen först, så att inget skickas i onödan och felet blir begripligt
+                val apkAbis = AbiCheck.apkAbis(parts)
+                val deviceAbis = if (apkAbis.isEmpty()) emptyList() else
+                    AbiCheck.parseDeviceAbis(runCatching { run("shell:${AbiCheck.QUERY_COMMAND}") }.getOrDefault(""))
+                AbiCheck.mismatch(apkAbis, deviceAbis)?.let { return@withConnection Outcome(false, it) }
+                val raw = if (parts.size == 1) {
                     val out = run("exec:cmd package install -S ${parts[0].length()}", parts[0])
                     if (ok(out)) Outcome(true, "${entry.displayName} är installerad på ${device.name}.")
                     else Outcome(false, "Installationen misslyckades: ${out.trim()}")
                 } else installSplit(entry, parts, device)
+                val outcome = if (raw.ok) raw else raw.copy(text = AbiCheck.explainFailure(raw.text, apkAbis, deviceAbis))
                 if (outcome.ok) {
                     val model = runCatching { run("shell:getprop ro.product.model").trim() }.getOrNull()
                     outcome.copy(model = model)

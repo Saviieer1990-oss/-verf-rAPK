@@ -95,13 +95,21 @@ class TvInstaller(private val library: ApkLibrary, private val context: Context)
         try {
             Dadb.create(device.host, device.port, keyPair(), connectTimeout = 8_000, socketTimeout = 0).use { adb ->
                 val parts = library.apkParts(entry)
+                // Kontrollera arkitekturen först, så att inget skickas i onödan och felet blir begripligt
+                val apkAbis = AbiCheck.apkAbis(parts)
+                val deviceAbis = if (apkAbis.isEmpty()) emptyList() else
+                    AbiCheck.parseDeviceAbis(runCatching { adb.shell(AbiCheck.QUERY_COMMAND).output }.getOrDefault(""))
+                AbiCheck.mismatch(apkAbis, deviceAbis)?.let { return Outcome(false, it) }
                 val result = if (parts.size == 1) adb.install(parts[0]) else adb.installMultiple(parts)
                 return when (result) {
                     InstallResult.Success -> {
                         val model = runCatching { adb.shell("getprop ro.product.model").output.trim() }.getOrNull()
                         Outcome(true, "${entry.displayName} är installerad på ${device.name}.", model)
                     }
-                    is InstallResult.Failure -> Outcome(false, "Installationen misslyckades: ${result.reason.trim()}")
+                    is InstallResult.Failure -> Outcome(
+                        false,
+                        AbiCheck.explainFailure("Installationen misslyckades: ${result.reason.trim()}", apkAbis, deviceAbis)
+                    )
                 }
             }
         } catch (e: AdbAuthException) {
