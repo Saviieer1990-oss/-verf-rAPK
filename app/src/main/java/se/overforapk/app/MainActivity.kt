@@ -70,7 +70,7 @@ private fun OverforApkApp(library: ApkLibrary, incomingIntent: Intent?, onShareI
                 runCatching {
                     context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
-                runCatching { library.import(uri, uri.lastPathSegment?.substringAfterLast('/')) }
+                runCatching { library.import(uri, null) }
                     .onSuccess {
                         entries = library.all()
                         sendEntryId = it.id
