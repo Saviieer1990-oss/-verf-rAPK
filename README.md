@@ -13,8 +13,8 @@ Android-app för att flytta appar (APK-filer) från mobilen till en Android TV �
 
 ## Funktioner
 
-- Appbibliotek: importera via delning eller filväljare, split-arkiv (APKS/XAPK), byta namn, behåll äldre versioner.
-- Från GitHub: lista repositories och hämta APK-filer från releases (publika repos utan token; privata med token som har läsrätt).
+- Appbibliotek: importera via delning eller filväljare, split-arkiv (APKS/XAPK), byta namn, behåll äldre versioner. Filnamn läses från Androids dokumentleverantör och felaktiga arkiv avvisas.
+- Från GitHub: lista repositories och hämta APK-filer från releases (publika repos utan token; privata med token som har läsrätt). GitHub-token krypteras med Android Keystore.
 - TV-installation via ADB utan adb-program: dadb för ADB över nätverk (port 5555) och libadb-android med Conscrypt för Trådlös felsökning (parkoppling + TLS).
 
 ## Bygg
