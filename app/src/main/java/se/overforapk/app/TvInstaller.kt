@@ -106,6 +106,52 @@ class TvInstaller(private val library: ApkLibrary, private val context: Context)
         }
     }
 
+
+    /**
+     * Some older TV adbd implementations drop the streaming "cmd package install -S"
+     * channel while returning the install result. Retry on a fresh ADB connection by
+     * transferring to /data/local/tmp first, then invoking the classic package manager.
+     */
+    private fun installViaPush(device: TvDevice, entry: ApkEntry, parts: List<java.io.File>): Outcome {
+        val remoteFiles = parts.mapIndexed { index, file ->
+            "/data/local/tmp/overforapk-${System.currentTimeMillis()}-$index.apk"
+        }
+        return try {
+            Dadb.create(device.host, device.port, keyPair(), connectTimeout = 12_000, socketTimeout = 30_000, keepAlive = true).use { adb ->
+                parts.zip(remoteFiles).forEach { (file, remote) ->
+                    when (val pushed = adb.push(file, remote)) {
+                        dadb.SyncResult.Success -> Unit
+                        is dadb.SyncResult.Failure -> return Outcome(false, "TV:n avbröt filöverföringen: ${pushed.reason}")
+                    }
+                }
+                val command = if (remoteFiles.size == 1) {
+                    "pm install -r \"${remoteFiles.single()}\""
+                } else {
+                    "pm install-multiple -r " + remoteFiles.joinToString(" ") { "\"$it\"" }
+                }
+                val response = adb.shell(command)
+                val output = response.output.trim()
+                if (response.exitCode == 0 && output.startsWith("Success")) {
+                    val model = runCatching { adb.shell("getprop ro.product.model").output.trim() }.getOrNull()
+                    Outcome(true, "${entry.displayName} är installerad på ${device.name}.", model)
+                } else {
+                    Outcome(false, "TV:n tog emot APK-filen men Android avvisade installationen: ${output.ifBlank { "inget svar från package manager" }}")
+                }
+            }
+        } catch (e: AdbAuthException) {
+            Outcome(false, TvText.DENIED)
+        } catch (e: Exception) {
+            Outcome(false, "ADB-överföringen bröts även med reservmetoden: ${e.message ?: e.javaClass.simpleName}. Kontrollera att TV:n är på och att den tillåter ADB-felsökning.")
+        } finally {
+            // Best-effort cleanup. The package manager may already have removed the files.
+            runCatching {
+                Dadb.create(device.host, device.port, keyPair(), connectTimeout = 8_000, socketTimeout = 8_000).use { adb ->
+                    adb.shell("rm -f " + remoteFiles.joinToString(" ") { "\"$it\"" })
+                }
+            }
+        }
+    }
+
     /**
      * Installerar [entry] på [device]. Kastar [NeedsPairingException] om TV:n måste parkopplas först.
      * Övriga fel returneras som [Outcome] med ok = false.
@@ -128,16 +174,20 @@ class TvInstaller(private val library: ApkLibrary, private val context: Context)
                 val deviceAbis = if (apkAbis.isEmpty()) emptyList() else
                     AbiCheck.parseDeviceAbis(runCatching { adb.shell(AbiCheck.QUERY_COMMAND).output }.getOrDefault(""))
                 AbiCheck.mismatch(apkAbis, deviceAbis)?.let { return Outcome(false, it) }
-                val result = if (parts.size == 1) adb.install(parts[0]) else adb.installMultiple(parts)
-                return when (result) {
-                    InstallResult.Success -> {
-                        val model = runCatching { adb.shell("getprop ro.product.model").output.trim() }.getOrNull()
-                        Outcome(true, "${entry.displayName} är installerad på ${device.name}.", model)
+                try {
+                    val result = if (parts.size == 1) adb.install(parts[0]) else adb.installMultiple(parts)
+                    when (result) {
+                        InstallResult.Success -> {
+                            val model = runCatching { adb.shell("getprop ro.product.model").output.trim() }.getOrNull()
+                            Outcome(true, "${entry.displayName} är installerad på ${device.name}.", model)
+                        }
+                        is InstallResult.Failure -> Outcome(
+                            false,
+                            AbiCheck.explainFailure("Installationen misslyckades: ${result.reason.trim()}", apkAbis, deviceAbis)
+                        )
                     }
-                    is InstallResult.Failure -> Outcome(
-                        false,
-                        AbiCheck.explainFailure("Installationen misslyckades: ${result.reason.trim()}", apkAbis, deviceAbis)
-                    )
+                } catch (e: dadb.AdbConnectionClosedException) {
+                    installViaPush(device, entry, parts)
                 }
             }
         } catch (e: AdbAuthException) {
