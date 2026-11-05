@@ -90,7 +90,7 @@ class TvInstaller(private val library: ApkLibrary, private val context: Context)
                 Outcome(false, "Kunde inte starta appen: ${e.message ?: e.javaClass.simpleName}")
             }
         }
-        try {
+        return try {
             Dadb.create(device.host, device.port, keyPair(), connectTimeout = 8_000, socketTimeout = 0).use { adb ->
                 return if (TvLaunch.start(packageName) { adb.shell(it).output }) Outcome(true, "$appName startades på ${device.name}.")
                 else Outcome(false, TvLaunch.failedText())
@@ -193,13 +193,13 @@ class TvInstaller(private val library: ApkLibrary, private val context: Context)
                 }
             }
         } catch (e: AdbAuthException) {
-            return Outcome(false, TvText.DENIED)
+            Outcome(false, TvText.DENIED)
         } catch (e: AdbConnectException) {
-            return Outcome(false, "Kunde inte ansluta till ${device.host}. Kontrollera att TV:n är på, att ni är på samma Wi-Fi och att felsökning är påslagen.")
+            Outcome(false, "Kunde inte ansluta till ${device.host}. Kontrollera att TV:n är på, att ni är på samma Wi-Fi och att felsökning är påslagen.")
         } catch (e: AdbException) {
-            return Outcome(false, "ADB-fel: ${e.message ?: "okänt fel"}")
+            Outcome(false, "ADB-fel: ${e.message ?: "okänt fel"}")
         } catch (e: java.io.IOException) {
-            return Outcome(false, "Nätverksfel: ${e.message ?: "anslutningen bröts"}. Om TV:n visade frågan om USB-felsökning: välj Tillåt och försök igen.")
+            Outcome(false, "Nätverksfel: ${e.message ?: "anslutningen bröts"}. Om TV:n visade frågan om USB-felsökning: välj Tillåt och försök igen.")
         }
     }
 }
