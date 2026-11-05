@@ -20,18 +20,42 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Packa upp patch.zip om den finns
+      - name: Packa upp zip-fil med projektet om den finns
+        if: github.ref == 'refs/heads/main'
         run: |
-          if [ -f patch.zip ]; then
-            unzip -o patch.zip -d .
-            rm patch.zip
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add -A
-            git commit -m "Lägg in projektfiler från patch.zip"
-            git push
+          shopt -s nullglob
+          zips=( *.zip )
+          if [ ${#zips[@]} -eq 0 ]; then
+            echo "Ingen zip-fil i repots rot, bygger det som finns."
+            exit 0
+          fi
+          tmp="$RUNNER_TEMP/unzipped"
+          for z in "${zips[@]}"; do
+            echo "Packar upp $z"
+            rm -rf "$tmp" && mkdir -p "$tmp"
+            unzip -o -q "$z" -d "$tmp"
+            rm -rf "$tmp/__MACOSX"
+            find "$tmp" -name .DS_Store -delete
+            # Hitta mappen som innehåller app/build.gradle.kts (zip-filen kan ha en extra toppmapp)
+            gradle_file=$(find "$tmp" -maxdepth 3 -path '*/app/build.gradle.kts' | head -n 1)
+            if [ -z "$gradle_file" ]; then
+              echo "::error::$z innehåller inget projekt (hittar inte app/build.gradle.kts)."
+              exit 1
+            fi
+            root=$(dirname "$(dirname "$gradle_file")")
+            # Workflow-filer får inte ändras av bygget, så .github lämnas orörd
+            rm -rf "$root/.github"
+            cp -a "$root"/. ./
+            git rm -q -f -- "$z"
+          done
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Inga ändringar att spara."
           else
-            echo "Ingen patch.zip, bygger det som finns."
+            git commit -m "Lägg in projektfiler från zip"
+            git push
           fi
 
       - name: Kontrollera att projektet finns
@@ -41,7 +65,7 @@ jobs:
             echo "ready=true" >> "$GITHUB_OUTPUT"
           else
             echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "Inga projektfiler än. Ladda upp patch.zip."
+            echo "Inga projektfiler än. Ladda upp zip-filen med projektet."
           fi
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
