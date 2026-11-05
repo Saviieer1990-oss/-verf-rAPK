@@ -94,7 +94,11 @@ internal fun ColumnScope.GithubPage(
                 )
                 Button(
                     enabled = user.isNotBlank() || token.isNotBlank(),
-                    onClick = { library.setGithub(user, token); showSettings = false; loadRepos() }
+                    onClick = {
+                        runCatching { library.setGithub(user, token) }
+                            .onSuccess { showSettings = false; loadRepos() }
+                            .onFailure { onMessage("Kunde inte kryptera GitHub-tokenen: ${it.message ?: "okänt fel"}") }
+                    }
                 ) { Text("Spara och hämta") }
             }
         }
