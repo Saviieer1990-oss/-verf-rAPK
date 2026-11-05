@@ -188,6 +188,8 @@ class TvInstaller(private val library: ApkLibrary, private val context: Context)
                     }
                 } catch (e: dadb.AdbConnectionClosedException) {
                     installViaPush(device, entry, parts)
+                } catch (e: dadb.AdbTimeoutException) {
+                    installViaPush(device, entry, parts)
                 }
             }
         } catch (e: AdbAuthException) {
