@@ -35,22 +35,25 @@ private val PICK_TYPES = arrayOf("application/vnd.android.package-archive", "app
 
 class MainActivity : ComponentActivity() {
     private lateinit var library: ApkLibrary
+    private var incomingShareIntent by mutableStateOf<Intent?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         library = ApkLibrary(this)
-        setContent { OverforApkApp(library, intent) }
+        incomingShareIntent = intent
+        setContent { OverforApkApp(library, incomingShareIntent) { incomingShareIntent = null } }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        incomingShareIntent = intent
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun OverforApkApp(library: ApkLibrary, incomingIntent: Intent?) {
+private fun OverforApkApp(library: ApkLibrary, incomingIntent: Intent?, onShareIntentHandled: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var entries by remember { mutableStateOf(library.all()) }
@@ -88,12 +91,13 @@ private fun OverforApkApp(library: ApkLibrary, incomingIntent: Intent?) {
                 incomingIntent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
             else @Suppress("DEPRECATION") (incomingIntent.getParcelableExtra(Intent.EXTRA_STREAM) as? Uri)
             if (uri != null) {
-                runCatching { library.import(uri, "delad-app.apk") }
+                runCatching { library.import(uri, null) }
                     .onSuccess {
                         entries = library.all(); sendEntryId = it.id; page = "send"
                         message = "Appen är importerad. Välj TV nedan och installera."
                     }
                     .onFailure { message = it.message ?: "Importen misslyckades." }
+                onShareIntentHandled()
             }
         }
     }
@@ -192,6 +196,7 @@ private fun OverforApkApp(library: ApkLibrary, incomingIntent: Intent?) {
                         }
                         HomeCard(Icons.Default.Apps, "Mina appar", "Samla och hantera APK-filer", "${entries.size} appar") { page = "library" }
                         HomeCard(Icons.Default.CloudDownload, "Från GitHub", "Hämta senaste versioner och releases") { page = "github" }
+                        HomeCard(Icons.Default.Tv, "Mina TV-apparater", "Hitta, spara och hantera dina TV-enheter") { page = "send" }
                         HomeCard(Icons.Default.Info, "Förbered TV:n", "Steg-för-steg-guide, görs en gång") { page = "help" }
                         Spacer(Modifier.height(12.dp))
                         Text("Tips: dela en APK-fil från valfri app till ÖverförAPK så hamnar du direkt i guiden.", color = Muted, fontSize = 12.sp)
