@@ -62,6 +62,22 @@ class TvInstaller(private val library: ApkLibrary, private val context: Context)
         "Trådlös felsökning kunde inte startas (${e.message ?: e.javaClass.simpleName})."
     }
 
+    /** Returns the installed versionCode, 0 when the package is absent, or null when it cannot be checked. */
+    fun installedVersion(device: TvDevice, packageName: String): Long? {
+        if (!Regex("[A-Za-z0-9_.]+").matches(packageName)) return null
+        if (device.wireless) return wireless.installedVersion(device, packageName)
+        return try {
+            Dadb.create(device.host, device.port, keyPair(), connectTimeout = 8_000, socketTimeout = 0).use { adb ->
+                val path = adb.shell("pm path $packageName").output.trim()
+                if (!path.lineSequence().any { it.startsWith("package:") }) return 0L
+                val dump = adb.shell("dumpsys package $packageName").output
+                Regex("versionCode=(\\d+)").find(dump)?.groupValues?.get(1)?.toLongOrNull()
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     /**
      * Installerar [entry] på [device]. Kastar [NeedsPairingException] om TV:n måste parkopplas först.
      * Övriga fel returneras som [Outcome] med ok = false.
