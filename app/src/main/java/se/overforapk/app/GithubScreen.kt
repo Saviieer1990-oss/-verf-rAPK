@@ -89,7 +89,7 @@ internal fun ColumnScope.GithubPage(
                     modifier = Modifier.fillMaxWidth()
                 )
                 Text(
-                    "Token sparas lokalt i appen. Använd en fine-grained token med enbart läsrätt (Contents: Read).",
+                    "Token krypteras med Android Keystore och lagras bara på mobilen. Använd en fine-grained token med enbart läsrätt (Contents: Read).",
                     color = Muted, fontSize = 11.sp
                 )
                 Button(
