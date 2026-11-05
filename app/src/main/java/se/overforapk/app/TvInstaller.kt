@@ -78,6 +78,34 @@ class TvInstaller(private val library: ApkLibrary, private val context: Context)
         }
     }
 
+    /** Startar [packageName] på TV:n. Kastar [NeedsPairingException] om TV:n måste parkopplas först. */
+    fun launch(device: TvDevice, packageName: String, appName: String): Outcome {
+        if (!Regex("[A-Za-z0-9_.]+").matches(packageName)) return Outcome(false, "Ogiltigt paketnamn.")
+        if (device.wireless) {
+            return try {
+                wireless.launch(device, packageName, appName)
+            } catch (e: NeedsPairingException) {
+                throw e
+            } catch (e: Exception) {
+                Outcome(false, "Kunde inte starta appen: ${e.message ?: e.javaClass.simpleName}")
+            }
+        }
+        try {
+            Dadb.create(device.host, device.port, keyPair(), connectTimeout = 8_000, socketTimeout = 0).use { adb ->
+                return if (TvLaunch.start(packageName) { adb.shell(it).output }) Outcome(true, "$appName startades på ${device.name}.")
+                else Outcome(false, TvLaunch.failedText())
+            }
+        } catch (e: AdbAuthException) {
+            return Outcome(false, "TV:n godkände inte anslutningen. Titta på TV:ns skärm, välj Tillåt (och Tillåt alltid) och försök igen.")
+        } catch (e: AdbConnectException) {
+            return Outcome(false, "Kunde inte ansluta till ${device.host}. Kontrollera att TV:n är på, att ni är på samma Wi-Fi och att felsökning är påslagen.")
+        } catch (e: AdbException) {
+            return Outcome(false, "ADB-fel: ${e.message ?: "okänt fel"}")
+        } catch (e: java.io.IOException) {
+            return Outcome(false, "Nätverksfel: ${e.message ?: "anslutningen bröts"}")
+        }
+    }
+
     /**
      * Installerar [entry] på [device]. Kastar [NeedsPairingException] om TV:n måste parkopplas först.
      * Övriga fel returneras som [Outcome] med ok = false.

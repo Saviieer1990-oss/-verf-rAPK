@@ -20,6 +20,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+private const val NO_TV_ICON_HINT =
+    "\n\nAppen saknar TV-ikon och syns därför inte på TV:ns startsida. " +
+        "Starta den med knappen Öppna nedan, eller under Inställningar → Appar → Visa alla appar på TV:n."
+
 @Composable
 private fun StepHeader(number: Int, title: String) {
     Row(Modifier.padding(top = 14.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -76,6 +80,7 @@ internal fun ColumnScope.SendPage(
     var tvVersion by remember { mutableStateOf<Long?>(null) }
     var checkingTvVersion by remember { mutableStateOf(false) }
     var tvCheckFailed by remember { mutableStateOf(false) }
+    var hasTvIcon by remember { mutableStateOf<Boolean?>(null) }
     var pairingFor by remember { mutableStateOf<TvDevice?>(null) }
     var manual by remember { mutableStateOf(false) }
     var manualName by remember { mutableStateOf("") }
@@ -100,6 +105,16 @@ internal fun ColumnScope.SendPage(
             checkingTvVersion = false
         } else {
             checkingTvVersion = false
+        }
+    }
+
+    LaunchedEffect(entry?.id) {
+        hasTvIcon = null
+        val e = entry
+        if (e != null) {
+            hasTvIcon = withContext(Dispatchers.IO) {
+                runCatching { TvCheck.hasLeanbackLauncher(library.apkParts(e)) }.getOrNull()
+            }
         }
     }
 
@@ -131,7 +146,7 @@ internal fun ColumnScope.SendPage(
                 ex != null -> outcome = Outcome(false, ex.message ?: "Installationen misslyckades.")
                 else -> {
                     val o = r.getOrThrow()
-                    outcome = o
+                    outcome = if (o.ok && hasTvIcon == false) o.copy(text = o.text + NO_TV_ICON_HINT) else o
                     if (o.ok) tvVersion = e.versionCode
                     onMessage(o.text)
                     val model = o.model
@@ -139,6 +154,24 @@ internal fun ColumnScope.SendPage(
                         saveDevices(devices.map { if (it.key == d.key) it.copy(name = model) else it })
                     }
                 }
+            }
+        }
+    }
+
+    fun launchOnTv() {
+        val d = device ?: return
+        val e = entry ?: return
+        val pkg = e.packageName ?: return
+        scope.launch {
+            outcome = null
+            busy = "Startar ${e.displayName} på ${d.name}…"
+            val r = runCatching { withContext(Dispatchers.IO) { installer.launch(d, pkg, e.displayName) } }
+            busy = null
+            val ex = r.exceptionOrNull()
+            when {
+                ex is NeedsPairingException -> pairingFor = d
+                ex != null -> outcome = Outcome(false, ex.message ?: "Kunde inte starta appen.")
+                else -> outcome = r.getOrThrow()
             }
         }
     }
@@ -162,6 +195,25 @@ internal fun ColumnScope.SendPage(
         item {
             OutlinedButton(onClick = onPickFile, modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Default.Add, null); Text("  Lägg till APK-fil från mobilen")
+            }
+        }
+
+        if (entry != null && hasTvIcon == false) {
+            item {
+                Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF3A2F12)), shape = RoundedCornerShape(14.dp)) {
+                    Row(Modifier.fillMaxWidth().padding(13.dp), verticalAlignment = Alignment.Top) {
+                        Icon(Icons.Default.Warning, null, tint = Color(0xFFFFC857))
+                        Spacer(Modifier.width(10.dp))
+                        Column {
+                            Text("Appen saknar TV-ikon", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                            Text(
+                                "Den går att installera men syns inte på TV:ns startsida, och kan vara svår att styra med fjärrkontrollen. " +
+                                    "Efter installationen startar du den med Öppna-knappen eller under Inställningar → Appar → Visa alla appar.",
+                                color = Muted, fontSize = 12.sp
+                            )
+                        }
+                    }
+                }
             }
         }
 
@@ -271,6 +323,15 @@ internal fun ColumnScope.SendPage(
         busy?.let { b ->
             Text(b, color = Accent, fontSize = 12.sp)
             LinearProgressIndicator(Modifier.fillMaxWidth())
+        }
+        if (entry != null && entry.packageName != null && device != null && ((tvVersion ?: 0L) > 0L || outcome?.ok == true)) {
+            OutlinedButton(
+                onClick = { launchOnTv() },
+                enabled = busy == null,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+            ) {
+                Icon(Icons.Default.PlayArrow, null); Text("  Öppna ${entry.displayName} på TV:n")
+            }
         }
         Button(
             onClick = { install() },

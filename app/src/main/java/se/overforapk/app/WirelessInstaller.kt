@@ -68,6 +68,17 @@ class WirelessInstaller(private val library: ApkLibrary, private val context: Co
         }
     }
 
+    fun launch(device: TvDevice, packageName: String, appName: String): Outcome = try {
+        withConnection(device) {
+            if (TvLaunch.start(packageName) { run("shell:$it") }) Outcome(true, "$appName startades på ${device.name}.")
+            else Outcome(false, TvLaunch.failedText())
+        }
+    } catch (e: NeedsPairingException) {
+        throw e
+    } catch (e: IOException) {
+        Outcome(false, e.message ?: "Anslutningen misslyckades.")
+    }
+
     fun install(device: TvDevice, entry: ApkEntry): Outcome {
         val parts = library.apkParts(entry)
         return try {
