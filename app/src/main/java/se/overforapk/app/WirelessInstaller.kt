@@ -52,6 +52,22 @@ class WirelessInstaller(private val library: ApkLibrary, private val context: Co
 
     private fun ok(text: String) = text.lineSequence().any { it.trim().startsWith("Success") }
 
+    fun installedVersion(device: TvDevice, packageName: String): Long? {
+        if (!Regex("[A-Za-z0-9_.]+").matches(packageName)) return null
+        return try {
+            withConnection(device) {
+                val path = run("shell:pm path $packageName").trim()
+                if (!path.lineSequence().any { it.startsWith("package:") }) 0L
+                else {
+                    val dump = run("shell:dumpsys package $packageName")
+                    Regex("versionCode=(\\d+)").find(dump)?.groupValues?.get(1)?.toLongOrNull()
+                }
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     fun install(device: TvDevice, entry: ApkEntry): Outcome {
         val parts = library.apkParts(entry)
         return try {
