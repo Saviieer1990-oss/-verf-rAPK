@@ -56,7 +56,7 @@ class ApkLibrary(private val context: Context) {
             }
             require(destination.length() > 0L) { "Filen är tom." }
             val added = inspect(destination)
-            require(added.packageName != null || added.isSplitArchive) { "Filen verkar inte innehålla en giltig Android-app." }
+            require(added.packageName != null) { "Kunde inte läsa appinformationen. Kontrollera att arkivet innehåller en giltig APK." }
             if (added.packageName != null && !keepOlderVersions()) {
                 all().filter {
                     it.file != destination && it.packageName == added.packageName
