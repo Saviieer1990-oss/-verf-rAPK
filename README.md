@@ -21,3 +21,7 @@ Android-app för att flytta appar (APK-filer) från mobilen till en Android TV �
 ## Bygg
 
 GitHub Actions bygger debug-APK automatiskt vid push till `main` och kan köras manuellt via Actions. Beroenden hämtas från Google, Maven Central och JitPack (libadb-android, sun-security-android).
+
+## Projektkrav och plan
+
+Se [docs/PROJECT_CONTEXT.md](docs/PROJECT_CONTEXT.md) för produktkrav, tekniska principer, testmatris och prioriterad utvecklingsplan. Dokumentet beskriver riktningen för fortsatt arbete i det befintliga projektet.
